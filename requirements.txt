@@ -1,0 +1,5 @@
+Flask==1.1.2
+beautifulsoup4
+requests
+google-cloud-datastore
+google-cloud-storage

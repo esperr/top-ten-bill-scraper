@@ -1,0 +1,8 @@
+[
+    {
+      "origin": ["*"],
+      "method": ["GET"],
+      "responseHeader": ["Content-Type='application/json'"],
+      "maxAgeSeconds": 3600
+    }
+]
