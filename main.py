@@ -1,19 +1,3 @@
-# Copyright 2018 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-# [START gae_python38_app]
-# [START gae_python3_app]
 from flask import Flask, make_response
 from bs4 import BeautifulSoup
 import requests
@@ -31,31 +15,14 @@ def find(arr, namestr):
         if x["url"] == namestr:
             return x
 
-def getstatus(url):
-    r = requests.get(url)
-    statusinfo = {}
-    if r.status_code != 200:
-        print("bad url for: " + url)
-    else:
-        root = etree.fromstring(r.text)
-        sponsorid = root.find('.bill/sponsors/item/bioguideId')
-        if sponsorid is not None:
-            statusinfo["memberpic"] = "https://www.congress.gov/img/member/" + sponsorid.text.lower() + ".jpg"
-        sponsorname = root.find('.bill/sponsors/item/fullName')
-        if sponsorname is not None:
-            statusinfo["billsponsor"] = sponsorname.text
-        #billsummary = root.find('.bill/summaries/billSummaries/item/text')
-        #if billsummary is not None:
-        #    statusinfo["summarytext"] = billsummary.text
-    return statusinfo
-
 def getpic(memberurl):
     memberpage = requests.get(memberurl)
     member_html = BeautifulSoup(memberpage.text, "html.parser")
     picturediv = member_html.find(class_="overview-member-column-picture")
-    picurl = picturediv.find_all('a')[0]['href']
+    picurl = picturediv.find_all('img')[0]['src']
+    #the anchor no longer points to the "real" pciture
+    #picurl = picturediv.find_all('a')[0]['href']
     return picurl
-
 
 
 def getstatus2(url):
@@ -74,22 +41,6 @@ def getstatus2(url):
     sponsorinfo["sponsorpic"] = "https://www.congress.gov" + picurlpart
     return sponsorinfo
 
-# If `entrypoint` is not defined in app.yaml, App Engine will look for an app
-# called `app` in `main.py`.
-app = Flask(__name__)
-
-
-@app.route('/')
-def showlist():
-    client = datastore.Client()
-    key = client.key("List", "top_ten")
-    mylist = client.get(key)
-    res = make_response(mylist)
-    res.headers['Content-Type'] = 'application/json; charset=UTF-8'
-    res.headers['Access-Control-Allow-Origin'] = '*'
-    return res
-
-@app.route('/buildlist')
 def scrapebills():
     allweeks = []
 
@@ -158,11 +109,9 @@ def scrapebills():
         for testweek in allweeks:
             testpastweek = find(testweek["bills"],billurl)
             if testpastweek is not None:
-                pastranks.append(testpastweek["rank"][:-1])
-        print(pastranks)
+                pastranks.append(int(testpastweek["rank"][:-1]))
         thisbill["weeksonchart"] = len(pastranks)
         pastranks.sort()
-        print(pastranks)
         thisbill["peak"] = int(pastranks[0])
         countdown["bills"].append(thisbill)
         #print("weeks on chart: " + str(pastcount))
@@ -180,6 +129,50 @@ def scrapebills():
     )
     client.put(mylist)
     return countdown
+
+# If `entrypoint` is not defined in app.yaml, App Engine will look for an app
+# called `app` in `main.py`.
+app = Flask(__name__)
+
+
+@app.route('/')
+def showlist():
+    client = datastore.Client()
+    key = client.key("List", "top_ten")
+    mylist = client.get(key)
+    res = make_response(mylist)
+    res.headers['Content-Type'] = 'application/json; charset=UTF-8'
+    res.headers['Access-Control-Allow-Origin'] = '*'
+    return res
+
+@app.route('/buildlist')
+def rebuildlist():
+    newlist = scrapebills()
+    return newlist
+
+@app.route('/checklist')
+def checkdate():
+    r = requests.get('https://www.congress.gov/most-viewed-bills/')
+    cat_html = BeautifulSoup(r.text, "html.parser")
+    weeks = cat_html.find_all("table")
+    thisweek = weeks[0]
+    countdowndatestr = thisweek.find("caption").contents[0]
+    countdowndate = datetime.strptime(countdowndatestr, '%B %d, %Y')
+
+    client = datastore.Client()
+    key = client.key("List", "top_ten")
+    mylist = client.get(key)
+    toptendatestr = mylist["updated"]
+    toptendate = datetime.strptime(toptendatestr, "%m/%d/%Y, %H:%M:%S")
+
+    daydiff = (countdowndate - toptendate).days
+
+    if daydiff > 0:
+        myrespstr = scrapebills()
+    else:
+        myrespstr = "Countdown: " + countdowndatestr + ". Top ten: " + toptendatestr + ". Diff: " + str(daydiff)
+    return str(myrespstr)
+
 
 
 if __name__ == '__main__':
